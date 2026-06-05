@@ -175,10 +175,7 @@
             padding: 0 6px;
         }
 
-        .line-numbers div.active-line {
-            color: #00ff00;
-            text-shadow: 0 0 4px #00ff0044;
-        }
+
 
         #editor {
             flex: 1;
@@ -290,11 +287,7 @@
             margin: 4px 0;
         }
 
-        .context-menu-shortcut {
-            margin-left: auto;
-            color: #006600;
-            font-size: 11px;
-        }
+
     </style>
 </head>
 <body>
@@ -335,8 +328,6 @@
         </div>
     </div>
 
-    <input type="file" id="fileInput" style="display: none;" multiple accept="*/*">
-
     <script>
         // Tab management
         let tabs = [];
@@ -359,7 +350,6 @@
         const charCount = document.getElementById('charCount');
         const cursorPos = document.getElementById('cursorPos');
         const tabCount = document.getElementById('tabCount');
-        const fileInput = document.getElementById('fileInput');
 
         // Initialize
         function init() {
@@ -1041,22 +1031,6 @@
                 console.error('Failed to load state:', e);
             }
         }
-
-        fileInput.addEventListener('change', (e) => {
-            const files = e.target.files;
-            if (!files || files.length === 0) return;
-            
-            Array.from(files).forEach(file => {
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    createTab(file.name, event.target.result);
-                };
-                reader.readAsText(file);
-            });
-            
-            // Reset input so same file can be opened again
-            fileInput.value = '';
-        });
 
         // Save before page unload/refresh
         window.addEventListener('beforeunload', () => {
