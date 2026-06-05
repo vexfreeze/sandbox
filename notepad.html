@@ -74,6 +74,20 @@
             overflow: hidden;
         }
 
+        .tab.dragging {
+            cursor: grabbing;
+            opacity: 0.4;
+            background-color: #001a00;
+        }
+
+        .tab.drag-over-left {
+            border-left: 2px solid #00ff00;
+        }
+
+        .tab.drag-over-right {
+            border-right: 2px solid #00ff00;
+        }
+
         .tab:hover {
             background-color: #002200;
         }
@@ -332,6 +346,11 @@
         const MAX_CLOSED_TABS = 50;
         const MAX_HISTORY = 100; // Max undo/redo history entries per tab
         let isHistoryUpdate = false; // Flag to prevent input event loops during undo/redo
+
+        // Drag-and-drop state for tab reordering
+        let draggedTabId = null;
+        let dragOverTabId = null;
+        let dragInsertBefore = true;
 
         const editor = document.getElementById('editor');
         const lineNumbers = document.getElementById('lineNumbers');
@@ -679,6 +698,75 @@
                     switchTab(tab.id);
                 };
 
+                // Drag-and-drop support for reordering
+                tabEl.draggable = true;
+                tabEl.dataset.tabId = tab.id;
+
+                tabEl.addEventListener('dragstart', (e) => {
+                    draggedTabId = tab.id;
+                    tabEl.classList.add('dragging');
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/plain', String(tab.id));
+                });
+
+                tabEl.addEventListener('dragend', () => {
+                    tabEl.classList.remove('dragging');
+                    draggedTabId = null;
+                    clearDragOverHighlight();
+                });
+
+                tabEl.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    if (draggedTabId === null || draggedTabId === tab.id) return;
+
+                    const rect = tabEl.getBoundingClientRect();
+                    const midX = rect.left + rect.width / 2;
+                    clearDragOverHighlight();
+
+                    if (e.clientX < midX) {
+                        tabEl.classList.add('drag-over-left');
+                        dragInsertBefore = true;
+                    } else {
+                        tabEl.classList.add('drag-over-right');
+                        dragInsertBefore = false;
+                    }
+                    dragOverTabId = tab.id;
+                });
+
+                tabEl.addEventListener('dragleave', () => {
+                    tabEl.classList.remove('drag-over-left', 'drag-over-right');
+                });
+
+                tabEl.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    if (draggedTabId === null || draggedTabId === tab.id) return;
+
+                    const fromIndex = tabs.findIndex(t => t.id === draggedTabId);
+                    const toIndex = tabs.findIndex(t => t.id === tab.id);
+                    if (fromIndex === -1 || toIndex === -1) return;
+
+                    const [movedTab] = tabs.splice(fromIndex, 1);
+                    let insertIndex = dragInsertBefore ? toIndex : toIndex + 1;
+                    if (fromIndex < toIndex) {
+                        insertIndex = dragInsertBefore ? toIndex : toIndex;
+                    }
+                    tabs.splice(insertIndex, 0, movedTab);
+
+                    // Activate the moved tab
+                    activeTabId = movedTab.id;
+                    isHistoryUpdate = true;
+                    editor.value = movedTab.content;
+                    isHistoryUpdate = false;
+                    updateLineNumbers();
+                    updateStatus();
+
+                    draggedTabId = null;
+                    clearDragOverHighlight();
+                    renderTabs();
+                    saveToStorage();
+                });
+
                 // Right-click context menu
                 tabEl.oncontextmenu = (e) => {
                     e.preventDefault();
@@ -714,6 +802,14 @@
             });
 
             tabCount.textContent = `Tabs: ${tabs.length}`;
+        }
+
+        // Clear drag-over highlight from all tabs
+        function clearDragOverHighlight() {
+            tabBar.querySelectorAll('.tab').forEach(t => {
+                t.classList.remove('drag-over-left', 'drag-over-right');
+            });
+            dragOverTabId = null;
         }
 
         // Close context menu on click outside
