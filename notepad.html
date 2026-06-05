@@ -1044,6 +1044,95 @@
             }
         });
 
+        // Sync from other windows - listen for localStorage changes
+        let isSyncing = false; // Prevent re-syncing our own changes back
+        window.addEventListener('storage', (e) => {
+            if (e.key !== 'neonNotepadState' || isSyncing) return;
+
+            isSyncing = true;
+
+            try {
+                const saved = localStorage.getItem('neonNotepadState');
+                if (!saved) {
+                    // Other window cleared everything - reset
+                    tabs = [];
+                    activeTabId = null;
+                    tabCounter = 0;
+                    closedTabs = [];
+                    createTab('Untitled');
+                    renderTabs();
+                    isHistoryUpdate = true;
+                    editor.value = '';
+                    isHistoryUpdate = false;
+                    updateLineNumbers();
+                    updateStatus();
+                    isSyncing = false;
+                    return;
+                }
+
+                const data = JSON.parse(saved);
+                const oldActiveTabId = activeTabId;
+                const oldActiveTab = tabs.find(t => t.id === oldActiveTabId);
+                const newActiveTab = (data.tabs || []).find(t => t.id === oldActiveTabId);
+
+                // Save current cursor position before syncing
+                const currentCursorPos = editor.selectionStart;
+                const currentCursorEnd = editor.selectionEnd;
+
+                // Update state from storage
+                tabs = (data.tabs || []).map(t => ({
+                    id: t.id,
+                    name: t.name,
+                    content: t.content,
+                    cursorPos: t.cursorPos || 0,
+                    cursorEnd: t.cursorEnd || 0,
+                    history: t.history || [t.content],
+                    historyIndex: t.historyIndex || 0
+                }));
+                activeTabId = data.activeTabId;
+                tabCounter = data.tabCounter || 0;
+                closedTabs = (data.closedTabs || []).map(t => ({
+                    id: t.id,
+                    name: t.name,
+                    content: t.content,
+                    cursorPos: t.cursorPos || 0,
+                    cursorEnd: t.cursorEnd || 0,
+                    timestamp: t.timestamp,
+                    history: t.history || [t.content],
+                    historyIndex: t.historyIndex || 0
+                }));
+
+                // If our active tab no longer exists, switch to the new active tab or first tab
+                if (!newActiveTab) {
+                    activeTabId = data.activeTabId || (tabs.length > 0 ? tabs[0].id : null);
+                }
+
+                // Restore editor content for active tab
+                const activeTab = tabs.find(t => t.id === activeTabId);
+                if (activeTab) {
+                    isHistoryUpdate = true;
+                    editor.value = activeTab.content;
+                    // Preserve cursor position if it's still valid, otherwise use saved position
+                    if (currentCursorPos <= editor.value.length && currentCursorEnd <= editor.value.length) {
+                        editor.selectionStart = currentCursorPos;
+                        editor.selectionEnd = currentCursorEnd;
+                    } else {
+                        editor.selectionStart = activeTab.cursorPos || 0;
+                        editor.selectionEnd = activeTab.cursorEnd || 0;
+                    }
+                    isHistoryUpdate = false;
+                }
+
+                renderTabs();
+                updateLineNumbers();
+                updateStatus();
+            } catch (err) {
+                console.error('Failed to sync from another window:', err);
+            } finally {
+                isSyncing = false;
+            }
+        });
+
         // Double-click on empty space in tab bar creates new tab
         tabBar.addEventListener('dblclick', (e) => {
             if (e.target === tabBar) {
