@@ -452,8 +452,24 @@
             if (e) e.stopPropagation();
 
             if (tabs.length === 1) {
-                // Don't close last tab, just clear it
+                // Don't close last tab, just clear it — but save to closed tabs history first
                 const tab = tabs[0];
+                closedTabs.push({
+                    id: tab.id,
+                    name: tab.name,
+                    content: tab.content,
+                    cursorPos: tab.cursorPos,
+                    cursorEnd: tab.cursorEnd,
+                    timestamp: Date.now(),
+                    history: tab.history || [tab.content],
+                    historyIndex: tab.historyIndex || 0
+                });
+
+                // Limit history size
+                if (closedTabs.length > MAX_CLOSED_TABS) {
+                    closedTabs.shift();
+                }
+
                 tab.content = '';
                 tab.name = 'Untitled';
                 tab.history = [''];
