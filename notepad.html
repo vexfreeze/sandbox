@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notepad</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #000;
+            color: #00ff00;
+            font-family: 'Consolas', 'Courier New', monospace;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .toolbar {
+            background-color: #0a0a0a;
+            padding: 6px;
+            border-bottom: 1px solid #003300;
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .title {
+            font-size: 14px;
+            color: #00ff00;
+            margin-right: 16px;
+            font-weight: bold;
+            text-shadow: 0 0 8px #00ff0088;
+        }
+
+        .tab-bar {
+            background-color: #0a0a0a;
+            display: flex;
+            align-items: center;
+            border-bottom: 1px solid #003300;
+            flex-shrink: 0;
+            overflow-x: auto;
+            min-height: 32px;
+        }
+
+        .tab-bar::-webkit-scrollbar {
+            height: 3px;
+        }
+
+        .tab-bar::-webkit-scrollbar-thumb {
+            background: #004400;
+        }
+
+        .tab {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px;
+            background-color: #001100;
+            border-right: 1px solid #003300;
+            cursor: pointer;
+            white-space: nowrap;
+            min-width: 100px;
+            max-width: 180px;
+            user-select: none;
+            transition: background-color 0.15s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .tab:hover {
+            background-color: #002200;
+        }
+
+        .tab.active {
+            background-color: #002a00;
+            border-bottom: 2px solid #00ff00;
+            box-shadow: inset 0 0 10px #00ff0022;
+        }
+
+        .tab-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-size: 12px;
+            color: #00cc00;
+            flex: 1;
+        }
+
+        .tab.active .tab-name {
+            color: #00ff00;
+            text-shadow: 0 0 6px #00ff0066;
+        }
+
+        .tab-name-input {
+            flex: 1;
+            min-width: 0;
+            background-color: #002200;
+            color: #00ff00;
+            border: 1px solid #00ff00;
+            font-family: inherit;
+            font-size: 12px;
+            padding: 1px 4px;
+            outline: none;
+            border-radius: 2px;
+        }
+
+        .tab-close {
+            font-size: 14px;
+            color: #006600;
+            cursor: pointer;
+            padding: 0 2px;
+            line-height: 1;
+            flex-shrink: 0;
+        }
+
+        .tab-close:hover {
+            color: #ff0000;
+            text-shadow: 0 0 4px #ff000088;
+        }
+
+        .tab-new {
+            color: #00ff00;
+            cursor: pointer;
+            padding: 6px;
+            font-size: 16px;
+            flex-shrink: 0;
+            user-select: none;
+        }
+
+        .tab-new:hover {
+            text-shadow: 0 0 8px #00ff00;
+        }
+
+        .editor-container {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .line-numbers {
+            background-color: #000a00;
+            color: #004400;
+            padding: 12px 8px;
+            font-size: 13px;
+            line-height: 1.6;
+            text-align: right;
+            user-select: none;
+            min-width: 45px;
+            overflow: hidden;
+            border-right: 1px solid #003300;
+            font-family: 'Consolas', 'Courier New', monospace;
+        }
+
+        .line-numbers div {
+            padding: 0 6px;
+        }
+
+        .line-numbers div.active-line {
+            color: #00ff00;
+            text-shadow: 0 0 4px #00ff0044;
+        }
+
+        #editor {
+            flex: 1;
+            background-color: #000;
+            color: #00ff00;
+            border: none;
+            padding: 12px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            resize: none;
+            outline: none;
+            tab-size: 4;
+            caret-color: #00ff00;
+            text-shadow: 0 0 2px #00ff0033;
+        }
+
+        #editor::placeholder {
+            color: #003300;
+        }
+
+        #editor::selection {
+            background-color: #004400;
+        }
+
+        .statusbar {
+            background-color: #001a00;
+            color: #00ff00;
+            padding: 3px 12px;
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+            border-top: 1px solid #003300;
+            flex-shrink: 0;
+        }
+
+        .statusbar span {
+            margin-right: 16px;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #000;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #003300;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #006600;
+            border-radius: 4px;
+        }
+
+        .context-menu {
+            display: none;
+            position: fixed;
+            background-color: #0a0a0a;
+            border: 1px solid #00ff00;
+            border-radius: 4px;
+            box-shadow: 0 0 10px #00ff0044;
+            z-index: 1000;
+            min-width: 200px;
+            padding: 4px 0;
+        }
+
+        .context-menu.visible {
+            display: block;
+        }
+
+        .context-menu-item {
+            padding: 8px 16px;
+            color: #00cc00;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: background-color 0.15s;
+        }
+
+        .context-menu-item:hover {
+            background-color: #002a00;
+            color: #00ff00;
+        }
+
+        .context-menu-item.disabled {
+            color: #004400;
+            cursor: not-allowed;
+        }
+
+        .context-menu-item.disabled:hover {
+            background-color: transparent;
+            color: #004400;
+        }
+
+        .context-menu-separator {
+            height: 1px;
+            background-color: #003300;
+            margin: 4px 0;
+        }
+
+        .context-menu-shortcut {
+            margin-left: auto;
+            color: #006600;
+            font-size: 11px;
+        }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <span class="title">Notepad</span>
+    </div>
+
+    <div class="tab-bar" id="tabBar">
+        <div class="tab-new" onclick="newFile()" title="New Tab">+</div>
+    </div>
+
+    <!-- Context Menu -->
+    <div class="context-menu" id="contextMenu">
+        <div class="context-menu-item" id="restoreTabItem" onclick="restoreLastClosedTab()">
+            <span>↩ Restore Last Closed Tab</span>
+        </div>
+        <div class="context-menu-separator"></div>
+        <div class="context-menu-item" onclick="clearClosedTabsHistory()">
+            <span>🗑 Clear Closed Tabs History</span>
+        </div>
+    </div>
+
+    <div class="editor-container">
+        <div class="line-numbers" id="lineNumbers"></div>
+        <textarea id="editor" placeholder="Start typing here..." spellcheck="false"></textarea>
+    </div>
+
+    <div class="statusbar">
+        <div>
+            <span id="lineCount">Lines: 1</span>
+            <span id="charCount">Chars: 0</span>
+            <span id="cursorPos">Ln 1, Col 1</span>
+        </div>
+        <div>
+            <span id="tabCount">Tabs: 1</span>
+            <span>UTF-8</span>
+            <span>Consolas</span>
+        </div>
+    </div>
+
+    <input type="file" id="fileInput" style="display: none;" multiple accept="*/*">
+
+    <script>
+        // Tab management
+        let tabs = [];
+        let activeTabId = null;
+        let tabCounter = 0;
+        let closedTabs = []; // History of closed tabs for restoration
+        const MAX_CLOSED_TABS = 50;
+
+        const editor = document.getElementById('editor');
+        const lineNumbers = document.getElementById('lineNumbers');
+        const tabBar = document.getElementById('tabBar');
+        const lineCount = document.getElementById('lineCount');
+        const charCount = document.getElementById('charCount');
+        const cursorPos = document.getElementById('cursorPos');
+        const tabCount = document.getElementById('tabCount');
+        const fileInput = document.getElementById('fileInput');
+
+        // Initialize
+        function init() {
+            loadFromStorage();
+            if (tabs.length === 0) {
+                createTab('Untitled');
+            }
+            renderTabs();
+            // Restore editor content directly (switchTab has early-return guard that skips restoration)
+            const activeTab = tabs.find(t => t.id === activeTabId);
+            if (activeTab) {
+                editor.value = activeTab.content;
+                // Restore cursor position
+                editor.selectionStart = activeTab.cursorPos || 0;
+                editor.selectionEnd = activeTab.cursorEnd || 0;
+                updateLineNumbers();
+                updateStatus();
+            }
+        }
+
+        // Tab creation
+        function createTab(name = 'Untitled', content = '') {
+            // Save current tab content and cursor position before switching
+            if (activeTabId) {
+                const currentTab = tabs.find(t => t.id === activeTabId);
+                if (currentTab) {
+                    currentTab.content = editor.value;
+                    currentTab.cursorPos = editor.selectionStart;
+                    currentTab.cursorEnd = editor.selectionEnd;
+                }
+            }
+
+            tabCounter++;
+            const tab = {
+                id: tabCounter,
+                name: name,
+                content: content,
+                cursorPos: 0,
+                cursorEnd: 0
+            };
+            tabs.push(tab);
+            activeTabId = tab.id;
+            editor.value = content;
+            updateLineNumbers();
+            updateStatus();
+            renderTabs();
+            saveToStorage();
+            return tab;
+        }
+
+        // Switch tab
+        function switchTab(id) {
+            // Already on this tab — nothing to do (keeps DOM stable for dblclick)
+            if (activeTabId === id) return;
+
+            // Save current tab content and cursor position only if switching to a different tab
+            if (activeTabId) {
+                const currentTab = tabs.find(t => t.id === activeTabId);
+                if (currentTab) {
+                    currentTab.content = editor.value;
+                    currentTab.cursorPos = editor.selectionStart;
+                    currentTab.cursorEnd = editor.selectionEnd;
+                }
+            }
+
+            activeTabId = id;
+            const tab = tabs.find(t => t.id === id);
+            if (tab) {
+                editor.value = tab.content;
+                // Restore cursor position
+                editor.selectionStart = tab.cursorPos || 0;
+                editor.selectionEnd = tab.cursorEnd || 0;
+                updateLineNumbers();
+                updateStatus();
+                renderTabs();
+                saveToStorage();
+                editor.focus();
+            }
+        }
+
+        // Close tab
+        function closeTab(id, e) {
+            if (e) e.stopPropagation();
+
+            if (tabs.length === 1) {
+                // Don't close last tab, just clear it
+                const tab = tabs[0];
+                tab.content = '';
+                tab.name = 'Untitled';
+                editor.value = '';
+                updateLineNumbers();
+                updateStatus();
+                renderTabs();
+                saveToStorage();
+                return;
+            }
+
+            const index = tabs.findIndex(t => t.id === id);
+            if (index === -1) return;
+
+            // Save current editor content to the tab being closed
+            const closingTab = tabs[index];
+            closingTab.content = editor.value;
+
+            // Add to closed tabs history
+            closedTabs.push({
+                id: closingTab.id,
+                name: closingTab.name,
+                content: closingTab.content,
+                cursorPos: closingTab.cursorPos,
+                cursorEnd: closingTab.cursorEnd,
+                timestamp: Date.now()
+            });
+
+            // Limit history size
+            if (closedTabs.length > MAX_CLOSED_TABS) {
+                closedTabs.shift();
+            }
+
+            tabs.splice(index, 1);
+
+            if (activeTabId === id) {
+                const newIndex = Math.min(index, tabs.length - 1);
+                activeTabId = tabs[newIndex].id;
+                const newTab = tabs[newIndex];
+                editor.value = newTab.content;
+                updateLineNumbers();
+                updateStatus();
+                renderTabs();
+                editor.focus();
+            } else {
+                renderTabs();
+                editor.focus();
+            }
+            saveToStorage();
+        }
+
+        // Restore last closed tab
+        function restoreLastClosedTab() {
+            hideContextMenu();
+            if (closedTabs.length === 0) return;
+
+            const restoredTab = closedTabs.pop();
+            const tab = {
+                id: restoredTab.id || ++tabCounter,
+                name: restoredTab.name,
+                content: restoredTab.content,
+                cursorPos: restoredTab.cursorPos || 0,
+                cursorEnd: restoredTab.cursorEnd || 0
+            };
+
+            tabs.push(tab);
+            activeTabId = tab.id;
+            editor.value = tab.content;
+            editor.selectionStart = tab.cursorPos;
+            editor.selectionEnd = tab.cursorEnd;
+            updateLineNumbers();
+            updateStatus();
+            renderTabs();
+            saveToStorage();
+            editor.focus();
+        }
+
+        // Clear closed tabs history
+        function clearClosedTabsHistory() {
+            hideContextMenu();
+            closedTabs = [];
+            saveToStorage();
+        }
+
+        // Hide context menu
+        function hideContextMenu() {
+            document.getElementById('contextMenu').classList.remove('visible');
+        }
+
+        // Show context menu
+        function showContextMenu(x, y) {
+            const menu = document.getElementById('contextMenu');
+            const restoreItem = document.getElementById('restoreTabItem');
+            
+            // Update restore item state
+            if (closedTabs.length === 0) {
+                restoreItem.classList.add('disabled');
+                restoreItem.querySelector('span').textContent = '↩ No Closed Tabs to Restore';
+            } else {
+                restoreItem.classList.remove('disabled');
+                const lastClosed = closedTabs[closedTabs.length - 1];
+                restoreItem.querySelector('span').textContent = `↩ Restore "${lastClosed.name}"`;
+            }
+
+            // Position menu
+            menu.style.left = x + 'px';
+            menu.style.top = y + 'px';
+            menu.classList.add('visible');
+
+            // Ensure menu stays in viewport
+            const rect = menu.getBoundingClientRect();
+            if (rect.right > window.innerWidth) {
+                menu.style.left = (window.innerWidth - rect.width - 10) + 'px';
+            }
+            if (rect.bottom > window.innerHeight) {
+                menu.style.top = (window.innerHeight - rect.height - 10) + 'px';
+            }
+        }
+
+        // Inline rename tab (double-click)
+        function startInlineRename(id, nameEl) {
+            const tab = tabs.find(t => t.id === id);
+            if (!tab) return;
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'tab-name-input';
+            input.value = tab.name;
+
+            nameEl.replaceWith(input);
+
+            // Defer focus to ensure it happens after all click handlers complete
+            setTimeout(() => {
+                input.focus();
+                input.select();
+            }, 0);
+
+            function finishRename() {
+                const newName = input.value.trim();
+                if (newName) {
+                    tab.name = newName;
+                    saveToStorage();
+                }
+                renderTabs();
+            }
+
+            input.onblur = finishRename;
+            input.onkeydown = (e) => {
+                if (e.key === 'Enter') input.blur();
+                if (e.key === 'Escape') {
+                    input.value = tab.name;
+                    input.blur();
+                }
+            };
+        }
+
+        // Render tabs
+        function renderTabs() {
+            const newButton = tabBar.querySelector('.tab-new');
+            tabBar.querySelectorAll('.tab').forEach(t => t.remove());
+
+            tabs.forEach(tab => {
+                const tabEl = document.createElement('div');
+                tabEl.className = `tab${tab.id === activeTabId ? ' active' : ''}`;
+
+                // Detect rapid clicks to skip 2nd click of a double-click
+                let lastClickTime = 0;
+                const dblClickWindow = 300;
+
+                tabEl.onclick = (e) => {
+                    const now = Date.now();
+                    if (now - lastClickTime < dblClickWindow) {
+                        return; // Second click of double-click — skip switch
+                    }
+                    lastClickTime = now;
+                    switchTab(tab.id);
+                };
+
+                // Right-click context menu
+                tabEl.oncontextmenu = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    showContextMenu(e.clientX, e.clientY);
+                };
+
+                const nameEl = document.createElement('span');
+                nameEl.className = 'tab-name';
+                nameEl.textContent = tab.name;
+                nameEl.title = tab.name;
+                nameEl.ondblclick = (e) => {
+                    e.stopPropagation();
+                    startInlineRename(tab.id, nameEl);
+                };
+
+                const closeEl = document.createElement('span');
+                closeEl.className = 'tab-close';
+                closeEl.textContent = '×';
+                closeEl.onclick = (e) => closeTab(tab.id, e);
+
+                // Middle-click to close tab
+                tabEl.onmousedown = (e) => {
+                    if (e.button === 1) {
+                        e.preventDefault();
+                        closeTab(tab.id, e);
+                    }
+                };
+
+                tabEl.appendChild(nameEl);
+                tabEl.appendChild(closeEl);
+                tabBar.insertBefore(tabEl, newButton);
+            });
+
+            tabCount.textContent = `Tabs: ${tabs.length}`;
+        }
+
+        // Close context menu on click outside
+        document.addEventListener('click', (e) => {
+            const menu = document.getElementById('contextMenu');
+            if (menu && !menu.contains(e.target)) {
+                hideContextMenu();
+            }
+        });
+
+        // Close context menu on Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                hideContextMenu();
+            }
+        });
+
+        // Right-click on empty tab bar area also shows context menu
+        tabBar.addEventListener('contextmenu', (e) => {
+            // Only handle if not already handled by a tab (tabs call stopPropagation)
+            e.preventDefault();
+            showContextMenu(e.clientX, e.clientY);
+        });
+
+        // Line numbers
+        function updateLineNumbers() {
+            const lines = editor.value.split('\n').length;
+            let html = '';
+            for (let i = 1; i <= lines; i++) {
+                html += `<div>${i}</div>`;
+            }
+            lineNumbers.innerHTML = html;
+        }
+
+        // Sync line numbers scroll
+        editor.addEventListener('scroll', () => {
+            lineNumbers.scrollTop = editor.scrollTop;
+        });
+
+        // Status update
+        function updateStatus() {
+            const lines = editor.value.split('\n').length;
+            const chars = editor.value.length;
+            lineCount.textContent = `Lines: ${lines}`;
+            charCount.textContent = `Chars: ${chars}`;
+        }
+
+        // Cursor position
+        function updateCursorPos() {
+            const text = editor.value.substring(0, editor.selectionStart);
+            const lines = text.split('\n');
+            const ln = lines.length;
+            const col = lines[lines.length - 1].length + 1;
+            cursorPos.textContent = `Ln ${ln}, Col ${col}`;
+        }
+
+        // Editor events
+        editor.addEventListener('input', () => {
+            updateLineNumbers();
+            updateStatus();
+            // Save cursor position for current tab
+            const currentTab = tabs.find(t => t.id === activeTabId);
+            if (currentTab) {
+                currentTab.cursorPos = editor.selectionStart;
+                currentTab.cursorEnd = editor.selectionEnd;
+            }
+            debouncedSave();
+        });
+
+        editor.addEventListener('click', () => {
+            updateCursorPos();
+            // Save cursor position on click
+            const currentTab = tabs.find(t => t.id === activeTabId);
+            if (currentTab) {
+                currentTab.cursorPos = editor.selectionStart;
+                currentTab.cursorEnd = editor.selectionEnd;
+            }
+        });
+
+        editor.addEventListener('keyup', () => {
+            updateCursorPos();
+            // Save cursor position on keyup (arrow keys, etc.)
+            const currentTab = tabs.find(t => t.id === activeTabId);
+            if (currentTab) {
+                currentTab.cursorPos = editor.selectionStart;
+                currentTab.cursorEnd = editor.selectionEnd;
+            }
+        });
+
+        editor.addEventListener('keydown', function(e) {
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                const start = this.selectionStart;
+                const end = this.selectionEnd;
+                this.value = this.value.substring(0, start) + '    ' + this.value.substring(end);
+                this.selectionStart = this.selectionEnd = start + 4;
+                updateLineNumbers();
+                updateStatus();
+                debouncedSave();
+            }
+        });
+
+        // New file/tab
+        function newFile() {
+            let name = 'Untitled';
+            let counter = 1;
+            while (tabs.find(t => t.name === `${name}${counter > 1 ? ' ' + counter : ''}`)) {
+                counter++;
+            }
+            createTab(`${name}${counter > 1 ? ' ' + counter : ''}`);
+        }
+
+        // Debounced save to localStorage
+        let saveTimeout = null;
+        function debouncedSave() {
+            if (saveTimeout) clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(() => {
+                saveToStorage();
+                saveTimeout = null;
+            }, 100); // Save after 100ms of inactivity
+        }
+
+        // Immediate save for critical operations
+        function immediateSave() {
+            if (saveTimeout) {
+                clearTimeout(saveTimeout);
+                saveTimeout = null;
+            }
+            saveToStorage();
+        }
+
+        // LocalStorage - Save
+        function saveToStorage() {
+            const currentTab = tabs.find(t => t.id === activeTabId);
+            if (currentTab) {
+                currentTab.content = editor.value;
+            }
+            const data = {
+                tabs: tabs,
+                activeTabId: activeTabId,
+                tabCounter: tabCounter,
+                closedTabs: closedTabs
+            };
+            localStorage.setItem('neonNotepadState', JSON.stringify(data));
+        }
+
+        // LocalStorage - Load
+        function loadFromStorage() {
+            try {
+                const saved = localStorage.getItem('neonNotepadState');
+                if (saved) {
+                    const data = JSON.parse(saved);
+                    tabs = data.tabs || [];
+                    activeTabId = data.activeTabId;
+                    tabCounter = data.tabCounter || 0;
+                    closedTabs = data.closedTabs || [];
+                    if (!tabs.find(t => t.id === activeTabId)) {
+                        activeTabId = tabs.length > 0 ? tabs[0].id : null;
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to load state:', e);
+            }
+        }
+
+        fileInput.addEventListener('change', (e) => {
+            const files = e.target.files;
+            if (!files || files.length === 0) return;
+            
+            Array.from(files).forEach(file => {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    createTab(file.name, event.target.result);
+                };
+                reader.readAsText(file);
+            });
+            
+            // Reset input so same file can be opened again
+            fileInput.value = '';
+        });
+
+
+
+        // Save before page unload/refresh
+        window.addEventListener('beforeunload', () => {
+            immediateSave();
+        });
+
+        // Save when tab becomes invisible (navigation, etc.)
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') {
+                immediateSave();
+            }
+        });
+
+        // Double-click on empty space in tab bar creates new tab
+        tabBar.addEventListener('dblclick', (e) => {
+            if (e.target === tabBar) {
+                newFile();
+            }
+        });
+
+        // Initialize on load
+        init();
+    </script>
+</body>
+</html>
