@@ -330,6 +330,8 @@
         let tabCounter = 0;
         let closedTabs = []; // History of closed tabs for restoration
         const MAX_CLOSED_TABS = 50;
+        const MAX_HISTORY = 100; // Max undo/redo history entries per tab
+        let isHistoryUpdate = false; // Flag to prevent input event loops during undo/redo
 
         const editor = document.getElementById('editor');
         const lineNumbers = document.getElementById('lineNumbers');
@@ -350,10 +352,12 @@
             // Restore editor content directly (switchTab has early-return guard that skips restoration)
             const activeTab = tabs.find(t => t.id === activeTabId);
             if (activeTab) {
+                isHistoryUpdate = true;
                 editor.value = activeTab.content;
                 // Restore cursor position
                 editor.selectionStart = activeTab.cursorPos || 0;
                 editor.selectionEnd = activeTab.cursorEnd || 0;
+                isHistoryUpdate = false;
                 updateLineNumbers();
                 updateStatus();
             }
@@ -377,7 +381,9 @@
                 name: name,
                 content: content,
                 cursorPos: 0,
-                cursorEnd: 0
+                cursorEnd: 0,
+                history: [content],
+                historyIndex: 0
             };
             tabs.push(tab);
             activeTabId = tab.id;
@@ -408,9 +414,12 @@
             const tab = tabs.find(t => t.id === id);
             if (tab) {
                 editor.value = tab.content;
+                // Restore history index for the switched tab
+                isHistoryUpdate = true;
                 // Restore cursor position
                 editor.selectionStart = tab.cursorPos || 0;
                 editor.selectionEnd = tab.cursorEnd || 0;
+                isHistoryUpdate = false;
                 updateLineNumbers();
                 updateStatus();
                 renderTabs();
@@ -428,7 +437,11 @@
                 const tab = tabs[0];
                 tab.content = '';
                 tab.name = 'Untitled';
+                tab.history = [''];
+                tab.historyIndex = 0;
+                isHistoryUpdate = true;
                 editor.value = '';
+                isHistoryUpdate = false;
                 updateLineNumbers();
                 updateStatus();
                 renderTabs();
@@ -439,18 +452,24 @@
             const index = tabs.findIndex(t => t.id === id);
             if (index === -1) return;
 
-            // Save current editor content to the tab being closed
+            // Save current editor content only if closing the active tab
             const closingTab = tabs[index];
-            closingTab.content = editor.value;
+            if (activeTabId === id) {
+                closingTab.content = editor.value;
+            }
+                closingTab.content = editor.value;
+            }
 
-            // Add to closed tabs history
+            // Add to closed tabs history (including undo/redo history)
             closedTabs.push({
                 id: closingTab.id,
                 name: closingTab.name,
                 content: closingTab.content,
                 cursorPos: closingTab.cursorPos,
                 cursorEnd: closingTab.cursorEnd,
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                history: closingTab.history || [closingTab.content],
+                historyIndex: closingTab.historyIndex || 0
             });
 
             // Limit history size
@@ -464,7 +483,9 @@
                 const newIndex = Math.min(index, tabs.length - 1);
                 activeTabId = tabs[newIndex].id;
                 const newTab = tabs[newIndex];
+                isHistoryUpdate = true;
                 editor.value = newTab.content;
+                isHistoryUpdate = false;
                 updateLineNumbers();
                 updateStatus();
                 renderTabs();
@@ -482,19 +503,24 @@
             if (closedTabs.length === 0) return;
 
             const restoredTab = closedTabs.pop();
+            tabCounter++;
             const tab = {
-                id: restoredTab.id || ++tabCounter,
+                id: tabCounter,
                 name: restoredTab.name,
                 content: restoredTab.content,
                 cursorPos: restoredTab.cursorPos || 0,
-                cursorEnd: restoredTab.cursorEnd || 0
+                cursorEnd: restoredTab.cursorEnd || 0,
+                history: restoredTab.history || [restoredTab.content],
+                historyIndex: restoredTab.historyIndex || 0
             };
 
             tabs.push(tab);
             activeTabId = tab.id;
+            isHistoryUpdate = true;
             editor.value = tab.content;
             editor.selectionStart = tab.cursorPos;
             editor.selectionEnd = tab.cursorEnd;
+            isHistoryUpdate = false;
             updateLineNumbers();
             updateStatus();
             renderTabs();
@@ -507,6 +533,59 @@
             hideContextMenu();
             closedTabs = [];
             saveToStorage();
+        }
+
+        // Save history snapshot for current tab
+        function saveHistorySnapshot() {
+            const currentTab = tabs.find(t => t.id === activeTabId);
+            if (!currentTab) return;
+
+            const currentContent = editor.value;
+            
+            // Trim any future history after current index (happens when typing after undo)
+            currentTab.history = currentTab.history.slice(0, currentTab.historyIndex + 1);
+            
+            // Don't save duplicate consecutive entries
+            if (currentTab.history[currentTab.historyIndex] === currentContent) return;
+            
+            currentTab.history.push(currentContent);
+            
+            // Limit history size
+            if (currentTab.history.length > MAX_HISTORY) {
+                currentTab.history.shift();
+            } else {
+                currentTab.historyIndex++;
+            }
+        }
+
+        // Undo
+        function undo() {
+            const currentTab = tabs.find(t => t.id === activeTabId);
+            if (!currentTab || currentTab.historyIndex <= 0) return;
+
+            isHistoryUpdate = true;
+            currentTab.historyIndex--;
+            const previousContent = currentTab.history[currentTab.historyIndex];
+            editor.value = previousContent;
+            updateLineNumbers();
+            updateStatus();
+            saveToStorage();
+            isHistoryUpdate = false;
+        }
+
+        // Redo
+        function redo() {
+            const currentTab = tabs.find(t => t.id === activeTabId);
+            if (!currentTab || currentTab.historyIndex >= currentTab.history.length - 1) return;
+
+            isHistoryUpdate = true;
+            currentTab.historyIndex++;
+            const nextContent = currentTab.history[currentTab.historyIndex];
+            editor.value = nextContent;
+            updateLineNumbers();
+            updateStatus();
+            saveToStorage();
+            isHistoryUpdate = false;
         }
 
         // Hide context menu
@@ -696,6 +775,9 @@
 
         // Editor events
         editor.addEventListener('input', () => {
+            // Skip history save if this is an undo/redo operation
+            if (isHistoryUpdate) return;
+            
             updateLineNumbers();
             updateStatus();
             // Save cursor position for current tab
@@ -704,6 +786,7 @@
                 currentTab.cursorPos = editor.selectionStart;
                 currentTab.cursorEnd = editor.selectionEnd;
             }
+            saveHistorySnapshot();
             debouncedSave();
         });
 
@@ -728,6 +811,18 @@
         });
 
         editor.addEventListener('keydown', function(e) {
+            // Handle Ctrl+Z (undo)
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+                e.preventDefault();
+                undo();
+                return;
+            }
+            // Handle Ctrl+Y (redo) and Ctrl+Shift+Z (redo alternative)
+            if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) {
+                e.preventDefault();
+                redo();
+                return;
+            }
             if (e.key === 'Tab') {
                 e.preventDefault();
                 const start = this.selectionStart;
@@ -736,6 +831,7 @@
                 this.selectionStart = this.selectionEnd = start + 4;
                 updateLineNumbers();
                 updateStatus();
+                saveHistorySnapshot();
                 debouncedSave();
             }
         });
@@ -776,10 +872,27 @@
                 currentTab.content = editor.value;
             }
             const data = {
-                tabs: tabs,
+                tabs: tabs.map(t => ({
+                    id: t.id,
+                    name: t.name,
+                    content: t.content,
+                    cursorPos: t.cursorPos,
+                    cursorEnd: t.cursorEnd,
+                    history: t.history || [t.content],
+                    historyIndex: t.historyIndex || 0
+                })),
                 activeTabId: activeTabId,
                 tabCounter: tabCounter,
-                closedTabs: closedTabs
+                closedTabs: closedTabs.map(t => ({
+                    id: t.id,
+                    name: t.name,
+                    content: t.content,
+                    cursorPos: t.cursorPos,
+                    cursorEnd: t.cursorEnd,
+                    timestamp: t.timestamp,
+                    history: t.history || [t.content],
+                    historyIndex: t.historyIndex || 0
+                }))
             };
             localStorage.setItem('neonNotepadState', JSON.stringify(data));
         }
@@ -790,10 +903,27 @@
                 const saved = localStorage.getItem('neonNotepadState');
                 if (saved) {
                     const data = JSON.parse(saved);
-                    tabs = data.tabs || [];
+                    tabs = (data.tabs || []).map(t => ({
+                        id: t.id,
+                        name: t.name,
+                        content: t.content,
+                        cursorPos: t.cursorPos || 0,
+                        cursorEnd: t.cursorEnd || 0,
+                        history: t.history || [t.content],
+                        historyIndex: t.historyIndex || 0
+                    }));
                     activeTabId = data.activeTabId;
                     tabCounter = data.tabCounter || 0;
-                    closedTabs = data.closedTabs || [];
+                    closedTabs = (data.closedTabs || []).map(t => ({
+                        id: t.id,
+                        name: t.name,
+                        content: t.content,
+                        cursorPos: t.cursorPos || 0,
+                        cursorEnd: t.cursorEnd || 0,
+                        timestamp: t.timestamp,
+                        history: t.history || [t.content],
+                        historyIndex: t.historyIndex || 0
+                    }));
                     if (!tabs.find(t => t.id === activeTabId)) {
                         activeTabId = tabs.length > 0 ? tabs[0].id : null;
                     }
