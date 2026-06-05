@@ -457,8 +457,6 @@
             if (activeTabId === id) {
                 closingTab.content = editor.value;
             }
-                closingTab.content = editor.value;
-            }
 
             // Add to closed tabs history (including undo/redo history)
             closedTabs.push({
@@ -500,7 +498,6 @@
         // Restore last closed tab
         function restoreLastClosedTab() {
             hideContextMenu();
-            if (closedTabs.length === 0) return;
 
             const restoredTab = closedTabs.pop();
             tabCounter++;
@@ -948,8 +945,6 @@
             // Reset input so same file can be opened again
             fileInput.value = '';
         });
-
-
 
         // Save before page unload/refresh
         window.addEventListener('beforeunload', () => {
