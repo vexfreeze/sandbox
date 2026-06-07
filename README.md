@@ -1,11 +1,11 @@
 # Projects
 
-- notepad.html
+- [notepad](https://vexfreeze.github.io/sandbox/notepad.html)
   * lm code
   * qwen
   * vs code
   * copilot plugin
-- scratchpad.html
+- [scratchpad](https://vexfreeze.github.io/sandbox/scratchpad.html)
   - opencode
   - big pickle
 
