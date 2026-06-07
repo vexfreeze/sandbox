@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neon Notepad</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; background: #000; overflow: hidden; }
+
+.tab-bar {
+  display: flex;
+  align-items: center;
+  background: #0a0a0a;
+  border-bottom: 1px solid #0f0;
+  min-height: 36px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #0f0 #000;
+}
+.tab-bar::-webkit-scrollbar { height: 4px; }
+.tab-bar::-webkit-scrollbar-track { background: #000; }
+.tab-bar::-webkit-scrollbar-thumb { background: #0f0; }
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: #111;
+  color: #0a0;
+  font-family: 'Courier New', Consolas, monospace;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  border-right: 1px solid #0f0;
+  flex-shrink: 0;
+}
+.tab.active {
+  background: #000;
+  color: #0f0;
+  border-bottom: 2px solid #0f0;
+}
+.tab:hover:not(.active) { background: #1a1a1a; }
+
+.tab .close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-size: 12px;
+  line-height: 1;
+  color: #0a0;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.tab .close:hover { background: #0f0; color: #000; }
+
+.tab-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #0f0;
+  font: inherit;
+  padding: 0;
+  width: auto;
+  min-width: 30px;
+}
+
+.add-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  color: #0a0;
+  font-size: 20px;
+  cursor: pointer;
+  user-select: none;
+}
+.add-tab:hover { color: #0f0; background: #1a1a1a; }
+
+.context-menu {
+  position: fixed;
+  z-index: 1000;
+  background: #111;
+  border: 1px solid #0f0;
+  font-family: 'Courier New', Consolas, monospace;
+  font-size: 13px;
+  color: #0f0;
+  min-width: 220px;
+  padding: 4px 0;
+  display: none;
+}
+.context-menu-item {
+  padding: 6px 16px;
+  cursor: pointer;
+  user-select: none;
+}
+.context-menu-item:hover { background: #0f0; color: #000; }
+.context-menu-item.disabled { color: #0a0; cursor: default; }
+.context-menu-item.disabled:hover { background: transparent; color: #0a0; }
+.context-menu-sep { height: 1px; background: #0f0; margin: 4px 8px; }
+
+.editor-pane {
+  position: relative;
+  height: calc(100% - 36px);
+}
+
+.editor-wrap {
+  display: none;
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%;
+  height: 100%;
+}
+.editor-wrap.active { display: flex; }
+
+.gutter {
+  flex-shrink: 0;
+  width: 48px;
+  padding: 0.5em 0 1.5em 0;
+  background: #0a0a0a;
+  border-right: 1px solid #0f0;
+  overflow: hidden;
+  font-family: 'Courier New', Consolas, monospace;
+  font-size: 16px;
+  line-height: 1.5;
+  color: #0a0;
+  user-select: none;
+}
+.gutter .ln {
+  padding: 0 4px 0 0;
+  text-align: right;
+  height: 24px;
+  line-height: 24px;
+}
+.gutter .ln.active-line {
+  color: #0f0;
+}
+
+.editor-wrap textarea {
+  flex: 1;
+  padding: 0.5em 1em 1.5em 1em;
+  background: #000;
+  color: #0f0;
+  font-family: 'Courier New', Consolas, 'Lucida Console', monospace;
+  font-size: 16px;
+  line-height: 1.5;
+  border: none;
+  outline: none;
+  resize: none;
+  caret-color: #0f0;
+}
+textarea::selection { background: #0f0; color: #000; }
+
+.editor-wrap textarea::-webkit-scrollbar { width: 8px; }
+.editor-wrap textarea::-webkit-scrollbar-track { background: #0a0a0a; }
+.editor-wrap textarea::-webkit-scrollbar-thumb { background: #0f0; border-radius: 0; }
+.editor-wrap textarea::-webkit-scrollbar-thumb:hover { background: #0c0; }
+.editor-wrap textarea::-webkit-scrollbar-corner { background: #000; }
+.editor-wrap textarea { scrollbar-width: thin; scrollbar-color: #0f0 #0a0a0a; }
+</style>
+</head>
+<body>
+<div class="tab-bar" id="tabBar"></div>
+<div class="editor-pane" id="editorPane"></div>
+<div class="context-menu" id="contextMenu"></div>
+
+<script>
+const tabBar = document.getElementById('tabBar');
+const editorPane = document.getElementById('editorPane');
+const ctxMenu = document.getElementById('contextMenu');
+
+const STORAGE_KEY = 'neon-notepad-state';
+const MAX_HISTORY = 100;
+
+let tabs = [];
+let activeId = null;
+let counter = 0;
+let closedTabs = [];
+let _historyLock = false;
+
+function pushHistory(tab) {
+  const cur = tab.textarea.value;
+  if (tab.history[tab.historyIndex] === cur) return;
+  tab.history = tab.history.slice(0, tab.historyIndex + 1);
+  tab.history.push(cur);
+  if (tab.history.length > MAX_HISTORY) tab.history.shift();
+  tab.historyIndex = tab.history.length - 1;
+}
+
+function saveState() {
+  const data = {
+    counter,
+    activeId,
+    closedTabs,
+    tabs: tabs.map(t => ({
+      id: t.id, name: t.name, content: t.textarea.value,
+      history: t.history, historyIndex: t.historyIndex,
+      selStart: t.selStart, selEnd: t.selEnd,
+      scrollTop: t.scrollTop
+    }))
+  };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+function loadState() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return false;
+  try {
+    const data = JSON.parse(raw);
+    counter = data.counter || 0;
+    data.tabs.forEach(t => {
+      const { wrap, gutter, textarea } = buildEditor(t.id);
+      textarea.value = t.content || '';
+      editorPane.appendChild(wrap);
+      const tab = {
+        id: t.id, name: t.name, textarea, gutter, wrap,
+        history: t.history || [t.content || ''],
+        historyIndex: t.historyIndex != null ? t.historyIndex : (t.history ? t.history.length - 1 : 0),
+        selStart: t.selStart || 0, selEnd: t.selEnd || 0,
+        scrollTop: t.scrollTop || 0
+      };
+      updateLineNumbers(tab);
+      tabs.push(tab);
+    });
+    closedTabs = data.closedTabs || [];
+    if (data.activeId && tabs.some(t => t.id === data.activeId)) {
+      activeId = data.activeId;
+    }
+    return true;
+  } catch { return false; }
+}
+
+function saveCursor() {
+  const tab = tabs.find(t => t.id === activeId);
+  if (!tab) return;
+  tab.selStart = tab.textarea.selectionStart;
+  tab.selEnd = tab.textarea.selectionEnd;
+}
+
+function trackCursor() {
+  saveCursor();
+  saveState();
+}
+
+function restoreCursor(tab) {
+  if (!tab) return;
+  const len = tab.textarea.value.length;
+  tab.textarea.setSelectionRange(Math.min(tab.selStart, len), Math.min(tab.selEnd, len));
+}
+
+function restoreScroll(tab) {
+  if (!tab) return;
+  const ta = tab.textarea;
+  ta.scrollTop = Math.min(tab.scrollTop, ta.scrollHeight - ta.clientHeight);
+}
+
+function restoreLastClosedTab() {
+  if (!closedTabs.length) return;
+  const d = closedTabs.pop();
+  createTab(d.name);
+  const tab = tabs[tabs.length - 1];
+  tab.textarea.value = d.content || '';
+  tab.history = d.history || [d.content || ''];
+  tab.historyIndex = d.historyIndex != null ? d.historyIndex : tab.history.length - 1;
+  tab.selStart = d.selStart || 0;
+  tab.selEnd = d.selEnd || 0;
+  tab.scrollTop = d.scrollTop || 0;
+  updateLineNumbers(tab);
+  restoreCursor(tab);
+  restoreScroll(tab);
+  saveState();
+}
+
+function clearClosedTabs() {
+  closedTabs = [];
+  saveState();
+}
+
+function showContextMenu(e, tabId) {
+  e.preventDefault();
+  ctxMenu.innerHTML = '';
+  if (tabId) {
+    const close = document.createElement('div');
+    close.className = 'context-menu-item';
+    close.textContent = 'Close Tab';
+    close.onclick = () => { hideContextMenu(); closeTab(tabId); };
+    ctxMenu.appendChild(close);
+    const sep = document.createElement('div');
+    sep.className = 'context-menu-sep';
+    ctxMenu.appendChild(sep);
+  }
+  const restore = document.createElement('div');
+  restore.className = 'context-menu-item' + (closedTabs.length ? '' : ' disabled');
+  restore.textContent = 'Restore Last Closed Tab';
+  if (closedTabs.length) restore.onclick = () => { hideContextMenu(); restoreLastClosedTab(); };
+  ctxMenu.appendChild(restore);
+  const clear = document.createElement('div');
+  clear.className = 'context-menu-item' + (closedTabs.length ? '' : ' disabled');
+  clear.textContent = 'Clear Closed Tabs History';
+  if (closedTabs.length) clear.onclick = () => { hideContextMenu(); clearClosedTabs(); };
+  ctxMenu.appendChild(clear);
+  const maxX = window.innerWidth - ctxMenu.offsetWidth;
+  const maxY = window.innerHeight - ctxMenu.offsetHeight;
+  ctxMenu.style.left = Math.min(e.clientX, maxX) + 'px';
+  ctxMenu.style.top = Math.min(e.clientY, maxY) + 'px';
+  ctxMenu.style.display = 'block';
+}
+
+function hideContextMenu() { ctxMenu.style.display = 'none'; }
+
+function buildEditor(id) {
+  const wrap = document.createElement('div');
+  wrap.className = 'editor-wrap';
+  wrap.id = 'wrap-' + id;
+
+  const gutter = document.createElement('div');
+  gutter.className = 'gutter';
+
+  const textarea = document.createElement('textarea');
+  textarea.id = 'editor-' + id;
+  textarea.spellcheck = false;
+
+  let scrollTimer;
+  textarea.addEventListener('scroll', () => {
+    gutter.scrollTop = textarea.scrollTop;
+    const tab = tabs.find(t => t.id === activeId);
+    if (tab) { tab.scrollTop = textarea.scrollTop; }
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(saveState, 150);
+  });
+  textarea.addEventListener('input', () => updateLineNumbers({ gutter, textarea }));
+  textarea.addEventListener('mouseup', trackCursor);
+  textarea.addEventListener('keyup', trackCursor);
+  textarea.addEventListener('select', trackCursor);
+
+  wrap.appendChild(gutter);
+  wrap.appendChild(textarea);
+  return { wrap, gutter, textarea };
+}
+
+function updateLineNumbers(tab) {
+  const lines = tab.textarea.value.split('\n').length;
+  const gutter = tab.gutter;
+  if (gutter.childElementCount === lines) return;
+  gutter.innerHTML = '';
+  for (let i = 1; i <= lines; i++) {
+    const d = document.createElement('div');
+    d.className = 'ln';
+    d.textContent = i;
+    gutter.appendChild(d);
+  }
+}
+
+function createTab(name) {
+  counter++;
+  const id = 'tab-' + counter;
+  const { wrap, gutter, textarea } = buildEditor(id);
+  editorPane.appendChild(wrap);
+
+  tabs.push({ id, name, textarea, gutter, wrap, history: [''], historyIndex: 0, selStart: 0, selEnd: 0, scrollTop: 0 });
+  updateLineNumbers(tabs[tabs.length - 1]);
+  render();
+  activateTab(id);
+  textarea.focus();
+  saveState();
+}
+
+function activateTab(id) {
+  if (activeId && activeId !== id) {
+    const prev = tabs.find(t => t.id === activeId);
+    if (prev) saveCursor();
+  }
+  tabs.forEach(t => {
+    t.wrap.classList.remove('active');
+    if (t.refs) t.refs.tabEl.classList.remove('active');
+  });
+  activeId = id;
+  const tab = tabs.find(t => t.id === id);
+  if (tab) {
+    tab.wrap.classList.add('active');
+    if (tab.refs) tab.refs.tabEl.classList.add('active');
+    tab.textarea.focus();
+    restoreCursor(tab);
+    restoreScroll(tab);
+  }
+  saveState();
+}
+
+function closeTab(id) {
+  const idx = tabs.findIndex(t => t.id === id);
+  if (idx === -1) return;
+  const tab = tabs[idx];
+  closedTabs.push({
+    name: tab.name, content: tab.textarea.value,
+    history: tab.history, historyIndex: tab.historyIndex,
+    selStart: tab.selStart, selEnd: tab.selEnd,
+    scrollTop: tab.scrollTop
+  });
+  tab.wrap.remove();
+  tabs.splice(idx, 1);
+  if (tabs.length === 0) {
+    activeId = null;
+    render();
+    saveState();
+    return;
+  }
+  if (activeId === id) {
+    const nextIdx = Math.min(idx, tabs.length - 1);
+    activateTab(tabs[nextIdx].id);
+  }
+  render();
+  saveState();
+}
+
+function startRename(tab) {
+  if (!tab.refs) return;
+  const label = tab.refs.labelEl;
+  if (!label || label.tagName !== 'SPAN') return;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'tab-input';
+  input.value = tab.name;
+  input.style.width = Math.max(60, tab.name.length * 8 + 20) + 'px';
+  label.replaceWith(input);
+  input.focus();
+  input.select();
+  const finish = () => {
+    const val = input.value.trim() || tab.name;
+    tab.name = val;
+    const span = document.createElement('span');
+    span.textContent = tab.name;
+    span.style.flex = '1';
+    span.style.cursor = 'default';
+    input.replaceWith(span);
+    if (tab.refs) tab.refs.labelEl = span;
+    saveState();
+  };
+  input.onblur = finish;
+  input.onkeydown = (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); } };
+}
+
+function render() {
+  tabBar.innerHTML = '';
+  tabs.forEach(t => {
+    const div = document.createElement('div');
+    div.className = 'tab' + (t.id === activeId ? ' active' : '');
+    div.lastClick = 0;
+    div.onclick = () => {
+      const now = Date.now();
+      activateTab(t.id);
+      if (now - div.lastClick < 350) { startRename(t); div.lastClick = 0; }
+      else { div.lastClick = now; }
+    };
+    div.onmousedown = (e) => { if (e.button === 1) { e.preventDefault(); closeTab(t.id); } };
+    div.oncontextmenu = (e) => showContextMenu(e, t.id);
+
+    const label = document.createElement('span');
+    label.textContent = t.name;
+    label.style.flex = '1';
+    label.style.cursor = 'default';
+    div.appendChild(label);
+
+    const closeBtn = document.createElement('span');
+    closeBtn.className = 'close';
+    closeBtn.textContent = '\u00d7';
+    closeBtn.onclick = (e) => { e.stopPropagation(); closeTab(t.id); };
+    div.appendChild(closeBtn);
+
+    t.refs = { tabEl: div, labelEl: label };
+    tabBar.appendChild(div);
+  });
+
+  const addBtn = document.createElement('div');
+  addBtn.className = 'add-tab';
+  addBtn.textContent = '+';
+  addBtn.onclick = () => createTab('Untitled-' + (counter + 1));
+  tabBar.appendChild(addBtn);
+}
+
+tabBar.ondblclick = (e) => {
+  if (!e.target.closest('.tab') && !e.target.closest('.add-tab')) createTab('Untitled-' + (counter + 1));
+};
+tabBar.oncontextmenu = (e) => {
+  if (!e.target.closest('.tab') && !e.target.closest('.add-tab')) showContextMenu(e, null);
+};
+
+document.addEventListener('click', (e) => { if (!e.target.closest('.context-menu')) hideContextMenu(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideContextMenu(); });
+
+editorPane.addEventListener('input', () => {
+  if (_historyLock) return;
+  const tab = tabs.find(t => t.id === activeId);
+  if (tab) pushHistory(tab);
+  saveState();
+});
+
+document.addEventListener('keydown', (e) => {
+  if (!e.ctrlKey) return;
+  const tab = tabs.find(t => t.id === activeId);
+  if (!tab || !tab.history) return;
+  if (e.key === 'z') {
+    e.preventDefault();
+    if (tab.historyIndex <= 0) return;
+    tab.historyIndex--;
+    _historyLock = true;
+    tab.textarea.value = tab.history[tab.historyIndex];
+    _historyLock = false;
+    updateLineNumbers(tab);
+    tab.selStart = tab.selEnd = tab.textarea.value.length;
+    restoreCursor(tab);
+    restoreScroll(tab);
+    saveState();
+  } else if (e.key === 'y') {
+    e.preventDefault();
+    if (tab.historyIndex >= tab.history.length - 1) return;
+    tab.historyIndex++;
+    _historyLock = true;
+    tab.textarea.value = tab.history[tab.historyIndex];
+    _historyLock = false;
+    updateLineNumbers(tab);
+    tab.selStart = tab.selEnd = tab.textarea.value.length;
+    restoreCursor(tab);
+    restoreScroll(tab);
+    saveState();
+  }
+});
+
+if (!loadState()) createTab('Untitled-1');
+else { render(); if (activeId) activateTab(activeId); }
+</script>
+</body>
+</html>
